@@ -25,8 +25,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ################################################################################
-# 
-# Usage: lyrics [-s | -S] <url | ARTIST TITLE | sporify | mpd | mpv | rhythmbox | rbox>
+#
+# Usage: lyrics [-s | -S] <url | ARTIST TITLE | sporify | mpd | mpv | rhythmbox | rbox | itunes>
 #
 ################################################################################
 
@@ -85,7 +85,7 @@ function printLyrics() {
     if [[ $2 != 0 ]]; then
         if [ $2 = "1" -a ! -e $3 -o $2 = "2" ]; then
             if [ ! -d `pathToDir $3` ]; then
-                mkdir `pathToDir $3`  
+                mkdir `pathToDir $3`
             fi
             echo "$LYR" > $3
             SUCCESS=$?
@@ -177,7 +177,7 @@ function do_it_plyrics() {
 
     # We found something
     else
-        printLyrics "$RESULT" "$3" `urlToPath $URL` 
+        printLyrics "$RESULT" "$3" `urlToPath $URL`
     fi
 
 }
@@ -318,9 +318,9 @@ function lookupSpotifyInfo() {
       TITLE="$(dbus-send --print-reply --session --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get string:'org.mpris.MediaPlayer2.Player' string:'Metadata' | grep -A 3 title | grep string | grep -v xesam | sed 's/^\s*//' | sed 's/^variant\s*//' | cut -d ' ' -f 2- | tr '(' ' ' | tr ')' ' ' | tr '"' ' ' )";
 
     elif [[ "$OSTYPE" == "darwin"* ]];then
-      ARTIST="$(osascript -e 'tell application "Spotify" to artist of current track as string')";
+      ARTIST="$(osascript -e 'tell application "Spotify" to get artist of current track as string')";
 
-      TITLE="$(osascript -e 'tell application "Spotify" to name of current track as string')";
+      TITLE="$(osascript -e 'tell application "Spotify" to get name of current track as string')";
 
     else
       echo "Your OS doesn't appear to be supported" >> $LOGFILE
@@ -328,6 +328,28 @@ function lookupSpotifyInfo() {
 
     if [[ -z "$ARTIST" || -z "$TITLE" ]];then
         echo "There was a problem getting the currently playing info from spotify" >> $LOGFILE;
+        exit 1;
+    fi
+
+}
+
+################################################################################
+# Look up the title and artist in iTunes
+# Sets the global ARTIST and TITLE varibles
+################################################################################
+function lookupiTunesInfo() {
+    # Checks $OSTYPE to determine the proper command for artist/title query
+    if [[ "$OSTYPE" == "darwin"* ]];then
+      ARTIST="$(osascript -e 'tell application "itunes" to get artist of current track as string')";
+
+      TITLE="$(osascript -e 'tell application "itunes" to get name of current track as string')";
+
+    else
+      echo "Your OS doesn't appear to be supported" >> $LOGFILE
+    fi
+
+    if [[ -z "$ARTIST" || -z "$TITLE" ]];then
+        echo "There was a problem getting the currently playing info from iTunes" >> $LOGFILE;
         exit 1;
     fi
 
@@ -393,11 +415,12 @@ function lookupMpdInfo() {
 function usage() {
     echo "$(basename $0) - Find out the songlyrics for a currently playing song." >> $LOGFILE
     echo "This script is capable of finding out the Artist and Title of the currently" >> $LOGFILE
-    echo "playing song. If, you are using Rhythmbox or Spotify. See usage message below." >> $LOGFILE
+    echo "playing song. If, you are using Rhythmbox, Spotify, or iTunes. See usage message below." >> $LOGFILE
     echo >> $LOGFILE
     echo "Do it like this:" >> $LOGFILE
     echo "$(basename $0) <artist> <title>       - To display lyrics for a song" >> $LOGFILE
     echo "$(basename $0) spotify                - To look up info for the currently playing song in Spotify" >> $LOGFILE
+    echo "$(basename $0) itunes                - To look up info for the currently playing song in iTunes" >> $LOGFILE
     echo "$(basename $0) rhythmbox|rbox         - To look up info for the currently playing song in Rhythmbox" >> $LOGFILE
     echo "$(basename $0) mpv                    - To look up info for the currently playing song in mpv" >> $LOGFILE
     echo "$(basename $0) mpd                    - To look up info for the currently playing song in mpd" >> $LOGFILE
@@ -434,7 +457,7 @@ echo "SAVE=$SAVE|" >> $LOGFILE
 echo "Arg1=$arg1|" >> $LOGFILE
 echo "Arg2=$arg2|" >> $LOGFILE
 ########################################
-# If given a songlyrics url 
+# If given a songlyrics url
 ########################################
 if [[ "$(echo $arg1 | grep 'http.*://.*songlyrics.com' -i)" ]];then
     if [[ $SAVE != 2 && -f `urlToPath "$arg1"` ]]; then
@@ -543,10 +566,29 @@ elif [[ "$arg1" == 'spotify' ]]; then
     fi
 
 ########################################
+# look up the lyrics from the currently playing itunes song
+########################################
+elif [[ "$arg1" == 'itunes' ]]; then
+    # Sets the global ARTIST and TITLE vars
+    lookupiTunesInfo
+    #echo "Looking up title by iTunes artist and title..." >> $LOGFILE;
+    #echo "Artist: $ARTIST" >> $LOGFILE;
+    #echo "Title: $TITLE" >> $LOGFILE;
+
+    echo `metaToPath "$ARTIST" "$TITLE"` > /tmp/songName
+    #Load the lirycs from file if it exists and if the option -S is not set
+    if [[ $SAVE != 2 && -f `metaToPath "$ARTIST" "$TITLE"` ]]; then
+        cat `metaToPath "$ARTIST" "$TITLE"`
+        exit $?
+    else
+        do_it_azlyrics "$ARTIST" "$TITLE" "$SAVE";
+    fi
+
+########################################
 # Artist Title args to look up
 ########################################
 elif [[ -n "$arg1" && -n "$arg2" ]];then
-    
+
     echo `metaToPath "$ARTIST" "$TITLE"` > /tmp/songName
     #Load the lirycs from file if it exists and if the option -S is not set
     if [[ $SAVE != 2 && -f `metaToPath "$ARTIST" "$TITLE"` ]]; then
@@ -556,7 +598,6 @@ elif [[ -n "$arg1" && -n "$arg2" ]];then
         do_it_azlyrics "$arg1" "$arg2" "$SAVE";
     fi
 else
-    usage 
+    usage
     return 1
 fi
-
